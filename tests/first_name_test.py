@@ -21,5 +21,5 @@ with open("./tests/first_names.csv", encoding='utf-8') as names_file:
 @pytest.mark.parametrize("first_name, first_name_dative, gender", test_dataset)
 def test_first_name(first_name, first_name_dative, gender):
     p = Petrovich()
-    hypothesis = p.lastname(first_name, Case.DATIVE, genders[gender])
+    hypothesis = p.firstname(first_name, Case.DATIVE, genders[gender])
     assert hypothesis == first_name_dative

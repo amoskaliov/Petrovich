@@ -60,3 +60,4 @@ target/
 .idea/
 
 petrovich/rules/*
+debug.py
