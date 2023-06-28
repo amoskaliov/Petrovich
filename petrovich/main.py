@@ -1,6 +1,7 @@
 # coding: utf-8
 import os
 import json
+import re
 
 __author__ = 'damirazo <me@damirazo.ru>'
 
@@ -12,14 +13,14 @@ DEFAULT_RULES_PATH = os.path.join(CURRENT_PATH, 'rules', 'rules.json')
 
 
 class Petrovich(object):
-    u"""
+    """
     Основной класс для склонения кириллических ФИО
     """
     # Разделители
-    separators = (u"-", u" ")
+    separators = ("-", " ")
 
     def __init__(self, rules_path=None):
-        u"""
+        """
         :param rules_path: Путь до файла с правилами.
             В случае отсутствия будет взят путь по умолчанию,
             указанный в `DEFAULT_RULES_PATH`
@@ -37,7 +38,7 @@ class Petrovich(object):
             self.data = json.load(fp)
 
     def firstname(self, value, case, gender=None):
-        u"""
+        """
         Склонение имени
 
         :param value: Значение для склонения
@@ -50,7 +51,7 @@ class Petrovich(object):
         return self.__inflect(value, case, 'firstname', gender)
 
     def lastname(self, value, case, gender=None):
-        u"""
+        """
         Склонение фамилии
 
         :param value: Значение для склонения
@@ -63,7 +64,7 @@ class Petrovich(object):
         return self.__inflect(value, case, 'lastname', gender)
 
     def middlename(self, value, case, gender=None):
-        u"""
+        """
         Склонение отчества
 
         :param value: Значение для склонения
@@ -75,78 +76,61 @@ class Petrovich(object):
 
         return self.__inflect(value, case, 'middlename', gender)
 
-    def __split_name(self, name):
-        u"""
-        Разделяет имя на сегменты по разделителям в self.separators
-        :param name: имя
-        :return: разделённое имя вместе с разделителями
-        """
-        def gen(name, separators):
-            if len(separators) == 0:
-                yield name
-            else:
-                segments = name.split(separators[0])
-                for subsegment in gen(segments[0], separators[1:]):
-                    yield subsegment
-                for segment in segments[1:]:
-                    for subsegment in gen(segment, separators[1:]):
-                        yield separators[0]
-                        yield subsegment
-
-        return gen(name, self.separators)
-
     def __inflect(self, value, case, name_form, gender=None):
-        excludes = self.__check_excludes(value, case, name_form, gender)
-        if excludes:
-            return excludes
+        segments = re.split('([' + "".join(self.separators) + '])', value)
+        result = str()
 
-        segments = list(self.__split_name(value))
-        if len(segments) > 1:
-            result = [(self.__find_rules(segment, case, name_form, gender)
-                      if (segment and (segment not in self.separators)) else segment)
-                      for segment in segments]
-            return u"".join(result)
+        for segment in segments:
+            if segment and (segment not in self.separators):
+                inflected = self.__apply_rule(segment.lower(), case, name_form, gender)
+                if segment.lower() == segment:
+                    result += inflected
+                elif segment.capitalize() == segment:
+                    result += inflected.capitalize()
+                elif segment.upper() == segment:
+                    result += inflected.upper()
+                else:
+                    result += inflected.capitalize()
+            else:
+                result += segment
 
-        else:
-            return self.__find_rules(value, case, name_form, gender)
+        return result
 
-    def __find_rules(self, name, case, name_form, gender=None):
+    def __find_rule(self, name, name_form, gender):
+        exception_rule = self.__find_exception_rule(name, name_form, gender)
+        if exception_rule:
+            return exception_rule
+
         for rule in self.data[name_form]['suffixes']:
-            # Если род указан и он не совпадает с текущим, то пропускаем
-            # В противном случае проверяем соответствие
-            if gender is not None and rule['gender'] != gender:
+            if gender is not None and rule['gender'] not in (gender, 'androgynous'):
                 continue
 
-            for char in rule['test']:
-                last_char = name[len(name) - len(char): len(name)]
-
-                if last_char == char:
-                    if rule['mods'][case] == u'.':
-                        continue
-
-                    return self.__apply_rule(rule['mods'], name, case)
-
-        return name
-
-    def __check_excludes(self, name, case, name_form, gender=None):
-        if not (name_form in self.data and
-                self.data[name_form].get('exceptions', None)):
-            return False
-
-        lower = name.lower()
-
-        for rule in self.data[name_form]['exceptions']:
-            if gender is not None and rule['gender'] != gender:
-                continue
-
-            if lower in rule['test']:
-                return self.__apply_rule(rule['mods'], name, case)
+            for pattern in rule['test']:
+                if name.endswith(pattern):
+                    return rule
 
         return False
 
-    @staticmethod
-    def __apply_rule(mods, name, case):
-        result = name[:len(name) - mods[case].count('-')]
-        result += mods[case].replace(u'-', u'')
+    def __find_exception_rule(self, name, name_form, gender):
+        if 'exceptions' not in self.data[name_form]:
+            return False
+
+        for rule in self.data[name_form]['exceptions']:
+            if gender is not None and rule['gender'] not in (gender, 'androgynous'):
+                continue
+
+            if name in rule['test']:
+                return rule
+
+        return False
+
+    def __apply_rule(self, name, case, name_form, gender=None):
+        rule = self.__find_rule(name, name_form, gender)
+
+        if rule['mods'][case] == '.':
+            return name
+        else:
+            result = name[:len(name) - rule['mods'][case].count('-')]
+            result += rule['mods'][case].replace('-', '')
 
         return result
